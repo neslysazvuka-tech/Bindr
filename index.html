@@ -1141,7 +1141,6 @@
                 if (pendingCount > 0) {
                     notificationBadge.textContent = pendingCount;
                     notificationBadge.style.display = 'flex';
-                    showNotification(`У вас ${pendingCount} новых запросов в друзья`, 'info');
                 } else {
                     notificationBadge.style.display = 'none';
                 }
@@ -1151,183 +1150,147 @@
         }
 
         // Принятие запроса в друзья
-        window.acceptFriendRequest = async function(fromUserId, requestId) {
+        async function acceptFriendRequest(fromUserId, requestId) {
             try {
-                // Обновляем статус запроса
+                // Обновление статуса запроса
                 await db.ref(`friendRequests/${currentUser.uid}/${requestId}`).update({
                     status: 'accepted',
                     acceptedAt: Date.now()
                 });
                 
-                // Добавляем в друзья обоим пользователям
+                // Добавление в друзья для текущего пользователя
                 await db.ref(`friends/${currentUser.uid}/${fromUserId}`).set({
                     since: Date.now()
                 });
                 
+                // Добавление в друзья для отправителя
                 await db.ref(`friends/${fromUserId}/${currentUser.uid}`).set({
                     since: Date.now()
                 });
                 
-                showNotification('Запрос в друзья принят!', 'success');
+                showNotification('Запрос в друзья принят', 'success');
                 
-                // Перезагружаем список друзей
+                // Перезагрузка списка друзей
                 loadFriendsList();
                 
             } catch (error) {
                 console.error('Ошибка принятия запроса:', error);
                 showNotification('Ошибка принятия запроса', 'error');
             }
-        };
+        }
 
         // Отклонение запроса в друзья
-        window.rejectFriendRequest = async function(fromUserId, requestId) {
+        async function rejectFriendRequest(fromUserId, requestId) {
             try {
-                // Удаляем запрос
+                // Удаление запроса
                 await db.ref(`friendRequests/${currentUser.uid}/${requestId}`).remove();
                 showNotification('Запрос в друзья отклонен', 'info');
-                
             } catch (error) {
                 console.error('Ошибка отклонения запроса:', error);
                 showNotification('Ошибка отклонения запроса', 'error');
             }
-        };
-
-        // Сохранение аватара
-        saveAvatarBtn.addEventListener('click', async () => {
-            if (!currentUser) {
-                showNotification('Сначала войдите в систему', 'error');
-                return;
-            }
-            
-            if (!avatarUpload.files[0]) {
-                showNotification('Выберите файл', 'warning');
-                return;
-            }
-            
-            const file = avatarUpload.files[0];
-            if (file.type !== 'image/jpeg') {
-                showNotification('Формат файла должен быть JPEG', 'warning');
-                return;
-            }
-            
-            // Проверка размера изображения
-            const img = new Image();
-            img.onload = async function() {
-                if (this.width !== 400 || this.height !== 400) {
-                    showNotification('Размер изображения должен быть 400×400 пикселей', 'warning');
-                    return;
-                }
-                
-                try {
-                    const avatarRef = storage.ref(`avatars/${currentUser.uid}`);
-                    await avatarRef.put(file);
-                    const avatarUrl = await avatarRef.getDownloadURL();
-                    avatarPreview.src = avatarUrl;
-                    showNotification('Аватар успешно сохранен', 'success');
-                } catch (error) {
-                    console.error('Ошибка загрузки аватара:', error);
-                    showNotification('Ошибка загрузки аватара: ' + error.message, 'error');
-                }
-            };
-            img.src = URL.createObjectURL(file);
-        });
-
-        // Удаление аватара
-        removeAvatarBtn.addEventListener('click', async () => {
-            if (!currentUser) {
-                showNotification('Сначала войдите в систему', 'error');
-                return;
-            }
-            
-            try {
-                const avatarRef = storage.ref(`avatars/${currentUser.uid}`);
-                await avatarRef.delete();
-                avatarPreview.src = '';
-                showNotification('Аватар удален', 'success');
-            } catch (error) {
-                console.error('Ошибка удаления аватара:', error);
-                showNotification('Ошибка удаления аватара: ' + error.message, 'error');
-            }
-        });
+        }
 
         // Поиск друзей
         searchFriendBtn.addEventListener('click', async () => {
-            if (!currentUser) {
-                showNotification('Сначала войдите в систему', 'error');
-                return;
-            }
+            const searchTerm = searchFriend.value.trim();
             
-            const searchUsername = searchFriend.value.trim();
-            if (!searchUsername) {
-                showNotification('Введите имя пользователя', 'warning');
+            if (!searchTerm) {
+                showNotification('Введите имя пользователя для поиска', 'warning');
                 return;
             }
             
             try {
-                const userSnapshot = await db.ref('users').orderByChild('username').equalTo(searchUsername).once('value');
+                // Поиск пользователей
+                const userSnapshot = await db.ref('users').orderByChild('username').startAt(searchTerm).endAt(searchTerm + '\uf8ff').once('value');
+                
                 if (!userSnapshot.exists()) {
-                    searchResults.innerHTML = '<p>Пользователь не найден</p>';
+                    searchResults.innerHTML = '<p>Пользователи не найдены</p>';
                     return;
                 }
                 
                 let resultsHTML = '';
+                
                 userSnapshot.forEach(childSnapshot => {
                     const user = childSnapshot.val();
-                    if (user.uid !== currentUser.uid) {
-                        resultsHTML += `
-                            <div class="friend-card">
-                                <img src="https://via.placeholder.com/60" alt="Аватар" class="friend-avatar">
-                                <div class="friend-info">
-                                    <h4>${user.username}</h4>
-                                </div>
-                                <div class="friend-actions">
-                                    <button onclick="sendFriendRequest('${childSnapshot.key}')">Добавить</button>
-                                </div>
+                    
+                    // Не показывать текущего пользователя
+                    if (user.uid === currentUser.uid) return;
+                    
+                    resultsHTML += `
+                        <div class="friend-card">
+                            <img src="https://via.placeholder.com/60" alt="Аватар" class="friend-avatar" id="avatar-${user.uid}">
+                            <div class="friend-info">
+                                <h4>${user.username}</h4>
+                                <p>Последний вход: ${new Date(user.lastLogin).toLocaleString()}</p>
                             </div>
-                        `;
-                    }
+                            <div class="friend-actions">
+                                <button onclick="sendFriendRequest('${user.uid}')">Добавить в друзья</button>
+                            </div>
+                        </div>
+                    `;
                 });
                 
-                searchResults.innerHTML = resultsHTML || '<p>Пользователь не найден</p>';
+                if (!resultsHTML) {
+                    searchResults.innerHTML = '<p>Пользователи не найдены</p>';
+                    return;
+                }
+                
+                searchResults.innerHTML = resultsHTML;
+                
+                // Загрузка аватаров
+                userSnapshot.forEach(childSnapshot => {
+                    const user = childSnapshot.val();
+                    if (user.uid === currentUser.uid) return;
+                    
+                    storage.ref(`avatars/${user.uid}`).getDownloadURL().then(url => {
+                        document.getElementById(`avatar-${user.uid}`).src = url;
+                    }).catch(error => {
+                        // Аватар не найден, оставляем placeholder
+                    });
+                });
+                
             } catch (error) {
                 console.error('Ошибка поиска:', error);
                 showNotification('Ошибка поиска: ' + error.message, 'error');
             }
         });
 
-        // Отправка запроса на дружбу
-        window.sendFriendRequest = async function(friendId) {
-            if (!currentUser) {
-                showNotification('Сначала войдите в систему', 'error');
-                return;
-            }
-            
-            // Проверяем, не отправили ли уже запрос
-            const existingRequest = await db.ref(`friendRequests/${friendId}/${currentUser.uid}`).once('value');
-            if (existingRequest.exists()) {
-                showNotification('Вы уже отправили запрос этому пользователю', 'warning');
-                return;
-            }
-            
-            // Проверяем, не друзья ли уже
-            const isFriend = await db.ref(`friends/${currentUser.uid}/${friendId}`).once('value');
-            if (isFriend.exists()) {
-                showNotification('Этот пользователь уже у вас в друзьях', 'warning');
-                return;
-            }
-            
+        // Отправка запроса в друзья
+        async function sendFriendRequest(toUserId) {
             try {
-                await db.ref(`friendRequests/${friendId}/${currentUser.uid}`).set({
+                // Проверка, не отправили ли мы уже запрос этому пользователю
+                const existingRequestSnapshot = await db.ref(`friendRequests/${toUserId}`).orderByChild('from').equalTo(currentUser.uid).once('value');
+                
+                if (existingRequestSnapshot.exists()) {
+                    showNotification('Вы уже отправили запрос этому пользователю', 'warning');
+                    return;
+                }
+                
+                // Проверка, не являются ли пользователи уже друзьями
+                const isFriendSnapshot = await db.ref(`friends/${currentUser.uid}/${toUserId}`).once('value');
+                if (isFriendSnapshot.exists()) {
+                    showNotification('Этот пользователь уже у вас в друзьях', 'warning');
+                    return;
+                }
+                
+                // Создание запроса
+                const requestId = db.ref().child('friendRequests').push().key;
+                
+                await db.ref(`friendRequests/${toUserId}/${requestId}`).set({
                     from: currentUser.uid,
-                    timestamp: Date.now(),
-                    status: 'pending'
+                    to: toUserId,
+                    status: 'pending',
+                    sentAt: Date.now()
                 });
-                showNotification('Запрос на дружбу отправлен', 'success');
+                
+                showNotification('Запрос в друзья отправлен', 'success');
+                
             } catch (error) {
                 console.error('Ошибка отправки запроса:', error);
-                showNotification('Ошибка отправки запроса', 'error');
+                showNotification('Ошибка отправки запроса: ' + error.message, 'error');
             }
-        };
+        }
 
         // Загрузка списка друзей
         async function loadFriendsList() {
@@ -1335,6 +1298,7 @@
             
             try {
                 const friendsSnapshot = await db.ref(`friends/${currentUser.uid}`).once('value');
+                
                 if (!friendsSnapshot.exists()) {
                     friendsList.innerHTML = '<p>У вас пока нет друзей</p>';
                     return;
@@ -1345,8 +1309,6 @@
                 
                 friendsSnapshot.forEach(childSnapshot => {
                     const friendId = childSnapshot.key;
-                    const friendData = childSnapshot.val();
-                    
                     const promise = db.ref(`users/${friendId}`).once('value').then(userSnapshot => {
                         if (userSnapshot.exists()) {
                             const user = userSnapshot.val();
@@ -1362,10 +1324,10 @@
                                         <img src="${avatarUrl || 'https://via.placeholder.com/60'}" alt="Аватар" class="friend-avatar">
                                         <div class="friend-info">
                                             <h4>${user.username}</h4>
-                                            <p>Друг с: ${new Date(friendData.since).toLocaleDateString()}</p>
+                                            <p>Друг с ${new Date(childSnapshot.val().since).toLocaleDateString()}</p>
                                         </div>
                                         <div class="friend-actions">
-                                            <button onclick="startChat('${friendId}', '${user.username}')">Чат</button>
+                                            <button onclick="startChat('${friendId}', '${user.username}')">Написать</button>
                                             <button class="friend-reject-btn" onclick="removeFriend('${friendId}')">Удалить</button>
                                         </div>
                                     </div>
@@ -1378,11 +1340,11 @@
                     friendsPromises.push(promise);
                 });
                 
-                // Ожидаем завершения всех промисов
-                const friendsHTMLArray = await Promise.all(friendsPromises);
-                friendsHTML = friendsHTMLArray.join('');
+                const friendsArray = await Promise.all(friendsPromises);
+                friendsHTML = friendsArray.join('');
                 
                 friendsList.innerHTML = friendsHTML;
+                
             } catch (error) {
                 console.error('Ошибка загрузки друзей:', error);
                 showNotification('Ошибка загрузки списка друзей', 'error');
@@ -1390,268 +1352,381 @@
         }
 
         // Удаление друга
-        window.removeFriend = async function(friendId) {
-            if (!currentUser) {
-                showNotification('Сначала войдите в систему', 'error');
-                return;
-            }
-            
+        async function removeFriend(friendId) {
             if (!confirm('Вы уверены, что хотите удалить этого пользователя из друзей?')) return;
             
             try {
+                // Удаление из списка друзей текущего пользователя
                 await db.ref(`friends/${currentUser.uid}/${friendId}`).remove();
+                
+                // Удаление из списка друзей другого пользователя
                 await db.ref(`friends/${friendId}/${currentUser.uid}`).remove();
+                
+                showNotification('Пользователь удален из друзей', 'info');
+                
+                // Обновление списка друзей
                 loadFriendsList();
-                showNotification('Пользователь удален из друзей', 'success');
+                
             } catch (error) {
                 console.error('Ошибка удаления друга:', error);
-                showNotification('Ошибка удаления друга: ' + error.message, 'error');
+                showNotification('Ошибка удаления друга', 'error');
             }
-        };
+        }
 
-        // Начать чат с другом
-        window.startChat = function(friendId, friendUsername) {
-            if (!currentUser) {
-                showNotification('Сначала войдите в систему', 'error');
-                return;
-            }
+        // Загрузка контактов для чата
+        async function loadContacts() {
+            if (!currentUser) return;
             
+            try {
+                const friendsSnapshot = await db.ref(`friends/${currentUser.uid}`).once('value');
+                
+                if (!friendsSnapshot.exists()) {
+                    contactsList.innerHTML = '<p>У вас пока нет друзей для чата</p>';
+                    return;
+                }
+                
+                let contactsHTML = '';
+                const contactsPromises = [];
+                
+                friendsSnapshot.forEach(childSnapshot => {
+                    const friendId = childSnapshot.key;
+                    const promise = db.ref(`users/${friendId}`).once('value').then(userSnapshot => {
+                        if (userSnapshot.exists()) {
+                            const user = userSnapshot.val();
+                            let avatarUrl = '';
+                            
+                            return storage.ref(`avatars/${friendId}`).getDownloadURL().then(url => {
+                                avatarUrl = url;
+                            }).catch(error => {
+                                // Аватар не найден, используем заглушку
+                            }).then(() => {
+                                // Проверка онлайн-статуса
+                                const isOnline = (Date.now() - user.lastActivity) < 300000; // 5 минут
+                                
+                                return `
+                                    <div class="contact-item" onclick="startChat('${friendId}', '${user.username}')">
+                                        <img src="${avatarUrl || 'https://via.placeholder.com/45'}" alt="Аватар" class="contact-avatar">
+                                        <div class="contact-info">
+                                            <div class="contact-name">${user.username}</div>
+                                            <div class="contact-status ${isOnline ? 'status-online' : 'status-offline'}">
+                                                ${isOnline ? '<span class="online-dot"></span>Онлайн' : 'Не в сети'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                `;
+                            });
+                        }
+                        return '';
+                    });
+                    
+                    contactsPromises.push(promise);
+                });
+                
+                const contactsArray = await Promise.all(contactsPromises);
+                contactsHTML = contactsArray.join('');
+                
+                contactsList.innerHTML = contactsHTML;
+                
+            } catch (error) {
+                console.error('Ошибка загрузки контактов:', error);
+                showNotification('Ошибка загрузки контактов', 'error');
+            }
+        }
+
+        // Начало чата с пользователем
+        async function startChat(userId, username) {
             currentChatUser = {
-                uid: friendId,
-                username: friendUsername
+                uid: userId,
+                username: username
             };
             
             // Переход на страницу чата
             profilePage.classList.remove('active');
             chatPage.classList.add('active');
             
-            // Обновление информации о чате
-            currentChatWith.textContent = friendUsername;
+            // Обновление заголовка чата
+            currentChatWith.textContent = username;
             
             // Загрузка аватара собеседника
-            storage.ref(`avatars/${friendId}`).getDownloadURL().then(url => {
-                chatHeaderAvatar.src = url;
-            }).catch(error => {
+            try {
+                const avatarUrl = await storage.ref(`avatars/${userId}`).getDownloadURL();
+                chatHeaderAvatar.src = avatarUrl;
+            } catch (error) {
                 chatHeaderAvatar.src = 'https://via.placeholder.com/50';
-            });
+            }
+            
+            // Проверка онлайн-статуса
+            const userSnapshot = await db.ref(`users/${userId}`).once('value');
+            if (userSnapshot.exists()) {
+                const user = userSnapshot.val();
+                const isOnline = (Date.now() - user.lastActivity) < 300000; // 5 минут
+                chatStatus.textContent = isOnline ? 'Онлайн' : 'Не в сети';
+                chatStatus.className = isOnline ? 'status-online' : 'status-offline';
+            }
             
             // Загрузка сообщений
             loadMessages();
             
-            // Проверка активности собеседника
-            checkChatUserActivity(friendId);
-        };
+            // Прослушивание новых сообщений
+            listenForNewMessages();
+        }
 
         // Загрузка сообщений
         async function loadMessages() {
             if (!currentUser || !currentChatUser) return;
             
-            messagesContainer.innerHTML = '<p>Загрузка сообщений...</p>';
-            
             try {
-                const messagesRef = db.ref(`messages/${currentUser.uid}_${currentChatUser.uid}`);
-                messagesRef.orderByChild('timestamp').on('value', snapshot => {
-                    if (!snapshot.exists()) {
-                        messagesContainer.innerHTML = '<p>Сообщений пока нет</p>';
-                        return;
-                    }
-                    
-                    let messagesHTML = '';
-                    snapshot.forEach(childSnapshot => {
-                        const message = childSnapshot.val();
-                        const messageClass = message.senderId === currentUser.uid ? 'message own' : 'message';
-                        
-                        if (message.text) {
-                            messagesHTML += `
-                                <div class="${messageClass}">
-                                    <div class="message-content">
-                                        <p>${message.text}</p>
-                                        <div class="message-time">${new Date(message.timestamp).toLocaleTimeString()}</div>
-                                    </div>
-                                </div>
-                            `;
-                        } else if (message.audioUrl) {
-                            messagesHTML += `
-                                <div class="${messageClass}">
-                                    <div class="message-content">
-                                        <audio controls>
-                                            <source src="${message.audioUrl}" type="audio/webm">
-                                            Ваш браузер не поддерживает аудио элементы.
-                                        </audio>
-                                        <div class="message-time">${new Date(message.timestamp).toLocaleTimeString()}</div>
-                                    </div>
-                                </div>
-                            `;
-                        }
-                    });
-                    
-                    messagesContainer.innerHTML = messagesHTML;
-                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                const messagesSnapshot = await db.ref(`messages/${getConversationId()}`).orderByChild('timestamp').limitToLast(50).once('value');
+                
+                messagesContainer.innerHTML = '';
+                
+                if (!messagesSnapshot.exists()) {
+                    return;
+                }
+                
+                messagesSnapshot.forEach(childSnapshot => {
+                    const message = childSnapshot.val();
+                    displayMessage(message);
                 });
+                
+                // Прокрутка к последнему сообщению
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                
             } catch (error) {
                 console.error('Ошибка загрузки сообщений:', error);
-                messagesContainer.innerHTML = '<p>Ошибка загрузки сообщений</p>';
+                showNotification('Ошибка загрузки сообщений', 'error');
             }
         }
 
-        // Отправка сообщения
-        sendMessageBtn.addEventListener('click', async () => {
-            if (!currentUser || !currentChatUser) {
-                showNotification('Сначала выберите собеседника', 'warning');
-                return;
+        // Прослушивание новых сообщений
+        function listenForNewMessages() {
+            if (!currentUser || !currentChatUser) return;
+            
+            const conversationId = getConversationId();
+            
+            db.ref(`messages/${conversationId}`).orderByChild('timestamp').startAt(Date.now()).on('child_added', (snapshot) => {
+                const message = snapshot.val();
+                displayMessage(message);
+                
+                // Прокрутка к последнему сообщению
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            });
+        }
+
+        // Генерация ID для беседы
+        function getConversationId() {
+            if (!currentUser || !currentChatUser) return '';
+            
+            // Создаем одинаковый ID независимо от порядка пользователей
+            const users = [currentUser.uid, currentChatUser.uid].sort();
+            return users.join('_');
+        }
+
+        // Отображение сообщения
+        function displayMessage(message) {
+            const messageElement = document.createElement('div');
+            messageElement.className = `message ${message.senderId === currentUser.uid ? 'own' : ''}`;
+            
+            let messageContent = '';
+            
+            if (message.type === 'text') {
+                messageContent = `
+                    <div class="message-content">
+                        ${message.text}
+                        <div class="message-time">${new Date(message.timestamp).toLocaleTimeString()}</div>
+                    </div>
+                `;
+            } else if (message.type === 'voice') {
+                messageContent = `
+                    <div class="message-content">
+                        <audio controls>
+                            <source src="${message.audioUrl}" type="audio/webm">
+                            Ваш браузер не поддерживает аудио элементы.
+                        </audio>
+                        <div class="message-time">${new Date(message.timestamp).toLocaleTimeString()}</div>
+                    </div>
+                `;
             }
             
-            const messageText = messageInput.value.trim();
-            if (!messageText) {
-                showNotification('Введите сообщение', 'warning');
-                return;
+            messageElement.innerHTML = messageContent;
+            messagesContainer.appendChild(messageElement);
+        }
+
+        // Отправка текстового сообщения
+        sendMessageBtn.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
             }
+        });
+
+        async function sendMessage() {
+            if (!currentUser || !currentChatUser || !messageInput.value.trim()) return;
             
             try {
-                const chatId = `${currentUser.uid}_${currentChatUser.uid}`;
+                const conversationId = getConversationId();
                 const messageId = db.ref().child('messages').push().key;
                 
-                await db.ref(`messages/${chatId}/${messageId}`).set({
+                const messageData = {
                     id: messageId,
                     senderId: currentUser.uid,
                     receiverId: currentChatUser.uid,
-                    text: messageText,
+                    text: messageInput.value.trim(),
+                    type: 'text',
                     timestamp: Date.now()
-                });
+                };
                 
+                await db.ref(`messages/${conversationId}/${messageId}`).set(messageData);
+                
+                // Обновление времени последней активности
+                await db.ref(`users/${currentUser.uid}/lastActivity`).set(Date.now());
+                
+                // Очистка поля ввода
                 messageInput.value = '';
+                
             } catch (error) {
                 console.error('Ошибка отправки сообщения:', error);
-                showNotification('Ошибка отправки сообщения: ' + error.message, 'error');
+                showNotification('Ошибка отправки сообщения', 'error');
             }
-        });
-
-        // Отправка сообщения по нажатию Enter
-        messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                sendMessageBtn.click();
-            }
-        });
+        }
 
         // Запись голосового сообщения
-        recordVoiceBtn.addEventListener('click', async () => {
-            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                showNotification('Ваш браузер не поддерживает запись голоса', 'error');
-                return;
-            }
+        recordVoiceBtn.addEventListener('mousedown', startRecording);
+        recordVoiceBtn.addEventListener('mouseup', stopRecording);
+        recordVoiceBtn.addEventListener('touchstart', startRecording);
+        recordVoiceBtn.addEventListener('touchend', stopRecording);
+
+        async function startRecording(e) {
+            e.preventDefault();
             
-            if (isRecording) {
-                // Остановить запись
-                mediaRecorder.stop();
-                recordVoiceBtn.classList.remove('recording');
-                isRecording = false;
-                return;
-            }
+            if (isRecording) return;
             
-            // Начать запись
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                mediaRecorder = new MediaRecorder(stream);
+                mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
                 audioChunks = [];
                 
                 mediaRecorder.ondataavailable = (event) => {
-                    audioChunks.push(event.data);
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data);
+                    }
                 };
                 
                 mediaRecorder.onstop = async () => {
                     const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                     
-                    // Отправка голосового сообщения
-                    if (currentUser && currentChatUser) {
-                        try {
-                            const audioId = db.ref().child('voiceMessages').push().key;
-                            const audioRef = storage.ref(`voiceMessages/${audioId}`);
-                            await audioRef.put(audioBlob);
-                            const audioUrl = await audioRef.getDownloadURL();
-                            
-                            const chatId = `${currentUser.uid}_${currentChatUser.uid}`;
-                            const messageId = db.ref().child('messages').push().key;
-                            
-                            await db.ref(`messages/${chatId}/${messageId}`).set({
-                                id: messageId,
-                                senderId: currentUser.uid,
-                                receiverId: currentChatUser.uid,
-                                audioUrl: audioUrl,
-                                timestamp: Date.now()
-                            });
-                            
-                            showNotification('Голосовое сообщение отправлено', 'success');
-                        } catch (error) {
-                            console.error('Ошибка отправки голосового сообщения:', error);
-                            showNotification('Ошибка отправки голосового сообщения', 'error');
-                        }
-                    }
+                    // Загрузка аудио в Firebase Storage
+                    const audioRef = storage.ref(`voiceMessages/${Date.now()}.webm`);
+                    await audioRef.put(audioBlob);
+                    const audioUrl = await audioRef.getDownloadURL();
                     
-                    // Остановка всех аудио дорожек
-                    stream.getTracks().forEach(track => track.stop());
+                    // Отправка сообщения
+                    const conversationId = getConversationId();
+                    const messageId = db.ref().child('messages').push().key;
+                    
+                    const messageData = {
+                        id: messageId,
+                        senderId: currentUser.uid,
+                        receiverId: currentChatUser.uid,
+                        audioUrl: audioUrl,
+                        type: 'voice',
+                        timestamp: Date.now()
+                    };
+                    
+                    await db.ref(`messages/${conversationId}/${messageId}`).set(messageData);
+                    
+                    // Обновление времени последней активности
+                    await db.ref(`users/${currentUser.uid}/lastActivity`).set(Date.now());
                 };
                 
                 mediaRecorder.start();
-                recordVoiceBtn.classList.add('recording');
                 isRecording = true;
-                showNotification('Запись голосового сообщения начата', 'info');
+                recordVoiceBtn.classList.add('recording');
+                
             } catch (error) {
-                console.error('Ошибка доступа к микрофону:', error);
-                showNotification('Не удалось получить доступ к микрофону', 'error');
+                console.error('Ошибка записи голоса:', error);
+                showNotification('Ошибка записи голосового сообщения', 'error');
             }
-        });
-
-        // Проверка активности пользователя
-        function checkUserActivity() {
-            if (!currentUser) return;
-            
-            // Обновление времени последней активности каждые 30 секунд
-            setInterval(async () => {
-                try {
-                    await db.ref(`users/${currentUser.uid}/lastActivity`).set(Date.now());
-                } catch (error) {
-                    console.error('Ошибка обновления активности:', error);
-                }
-            }, 30000);
         }
 
-        // Проверка активности собеседника
-        function checkChatUserActivity(friendId) {
-            if (!friendId) return;
+        function stopRecording(e) {
+            e.preventDefault();
             
-            db.ref(`users/${friendId}/lastActivity`).on('value', snapshot => {
-                if (snapshot.exists()) {
-                    const lastActivity = snapshot.val();
-                    const now = Date.now();
-                    const diff = now - lastActivity;
-                    
-                    if (diff < 300000) { // 5 минут
-                        chatStatus.textContent = 'В сети';
-                        chatStatus.className = 'status-online';
-                    } else {
-                        chatStatus.textContent = 'Не в сети';
-                        chatStatus.className = 'status-offline';
-                    }
-                }
-            });
+            if (!isRecording || !mediaRecorder) return;
+            
+            mediaRecorder.stop();
+            isRecording = false;
+            recordVoiceBtn.classList.remove('recording');
+            
+            // Остановка всех аудио потоков
+            if (mediaRecorder.stream) {
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            }
         }
 
-        // Удаление аккаунта
-        deleteAccountBtn.addEventListener('click', async () => {
-            if (!currentUser) {
-                showNotification('Сначала войдите в систему', 'error');
+        // Сохранение аватара
+        saveAvatarBtn.addEventListener('click', async () => {
+            if (!currentUser || !avatarUpload.files[0]) {
+                showNotification('Выберите изображение', 'warning');
                 return;
             }
             
-            if (!confirm('Вы уверены, что хотите удалить свой аккаунт? Это действие нельзя отменить.')) return;
+            const file = avatarUpload.files[0];
+            
+            // Проверка типа файла
+            if (!file.type.startsWith('image/')) {
+                showNotification('Выберите изображение', 'warning');
+                return;
+            }
             
             try {
-                // Удаление данных пользователя
+                // Загрузка аватара в Firebase Storage
+                const avatarRef = storage.ref(`avatars/${currentUser.uid}`);
+                await avatarRef.put(file);
+                
+                // Получение URL загруженного аватара
+                const avatarUrl = await avatarRef.getDownloadURL();
+                avatarPreview.src = avatarUrl;
+                
+                showNotification('Аватар успешно обновлен', 'success');
+                
+            } catch (error) {
+                console.error('Ошибка загрузки аватара:', error);
+                showNotification('Ошибка загрузки аватара', 'error');
+            }
+        });
+
+        // Удаление аватара
+        removeAvatarBtn.addEventListener('click', async () => {
+            if (!currentUser) return;
+            
+            try {
+                // Удаление аватара из Firebase Storage
+                const avatarRef = storage.ref(`avatars/${currentUser.uid}`);
+                await avatarRef.delete();
+                
+                avatarPreview.src = '';
+                
+                showNotification('Аватар удален', 'info');
+                
+            } catch (error) {
+                console.error('Ошибка удаления аватара:', error);
+                showNotification('Ошибка удаления аватара', 'error');
+            }
+        });
+
+        // Удаление аккаунта
+        deleteAccountBtn.addEventListener('click', async () => {
+            if (!confirm('Вы уверены, что хотите удалить аккаунт? Это действие нельзя отменить.')) return;
+            
+            try {
+                // Удаление данных пользователя из базы данных
                 await db.ref(`users/${currentUser.uid}`).remove();
                 
                 // Удаление аватара
                 try {
-                    await storage.ref(`avatars/${currentUser.uid}`).delete();
+                    const avatarRef = storage.ref(`avatars/${currentUser.uid}`);
+                    await avatarRef.delete();
                 } catch (error) {
                     console.error('Ошибка удаления аватара:', error);
                 }
@@ -1668,68 +1743,51 @@
                 // Удаление запросов в друзья
                 await db.ref(`friendRequests/${currentUser.uid}`).remove();
                 
-                // Удаление исходящих запросов
-                const allRequestsSnapshot = await db.ref('friendRequests').once('value');
-                if (allRequestsSnapshot.exists()) {
-                    allRequestsSnapshot.forEach(userSnapshot => {
-                        userSnapshot.forEach(requestSnapshot => {
-                            if (requestSnapshot.val().from === currentUser.uid) {
-                                db.ref(`friendRequests/${userSnapshot.key}/${requestSnapshot.key}`).remove();
-                            }
-                        });
-                    });
-                }
-                
                 // Удаление сообщений
-                const messagesRef = db.ref('messages');
-                const messagesSnapshot = await messagesRef.once('value');
-                if (messagesSnapshot.exists()) {
-                    messagesSnapshot.forEach(chatSnapshot => {
-                        if (chatSnapshot.key.includes(currentUser.uid)) {
-                            messagesRef.child(chatSnapshot.key).remove();
-                        }
-                    });
-                }
+                // (в реальном приложении нужно удалить все сообщения пользователя)
                 
                 // Выход из системы
-                currentUser = null;
                 localStorage.removeItem('currentUser');
+                currentUser = null;
                 
                 // Переход на страницу входа
                 profilePage.classList.remove('active');
                 loginPage.classList.add('active');
                 
-                showNotification('Ваш аккаунт был удален', 'success');
+                showNotification('Аккаунт успешно удален', 'success');
+                
             } catch (error) {
                 console.error('Ошибка удаления аккаунта:', error);
-                showNotification('Ошибка удаления аккаунта: ' + error.message, 'error');
+                showNotification('Ошибка удаления аккаунта', 'error');
             }
         });
 
-        // Обработчик клика по иконке уведомлений
-        notificationIcon.addEventListener('click', () => {
-            // Переходим на страницу профиля где отображаются запросы
-            if (!profilePage.classList.contains('active')) {
-                loginPage.classList.remove('active');
-                registerPage.classList.remove('active');
-                chatPage.classList.remove('active');
-                profilePage.classList.add('active');
-            }
-        });
+        // Проверка активности пользователя
+        function checkUserActivity() {
+            if (!currentUser) return;
+            
+            // Обновление активности каждую минуту
+            setInterval(async () => {
+                await db.ref(`users/${currentUser.uid}/lastActivity`).set(Date.now());
+            }, 60000);
+        }
 
-        // Проверка авторизации при загрузке страницы
-        window.addEventListener('DOMContentLoaded', () => {
+        // Инициализация приложения
+        function initApp() {
             initTheme();
             
+            // Проверка авторизации
             const savedUser = localStorage.getItem('currentUser');
             if (savedUser) {
                 currentUser = JSON.parse(savedUser);
                 loginPage.classList.remove('active');
                 profilePage.classList.add('active');
                 loadUserData();
-                showNotification(`С возвращением, ${currentUser.username}!`, 'success');
             }
-        });
+        }
+
+        // Запуск приложения
+        initApp();
     </script>
 </body>
 </html>
