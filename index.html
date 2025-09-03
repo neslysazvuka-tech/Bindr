@@ -108,6 +108,12 @@
             content: "💬";
         }
 
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
         .theme-toggle {
             background: var(--background-secondary);
             border: 1px solid var(--border);
@@ -127,6 +133,29 @@
         .theme-toggle:hover {
             transform: rotate(15deg);
             box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .notification-icon {
+            position: relative;
+            cursor: pointer;
+            font-size: 24px;
+            padding: 8px;
+        }
+
+        .badge {
+            background-color: var(--primary-color);
+            color: white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+            position: absolute;
+            top: -5px;
+            right: -5px;
         }
 
         .page {
@@ -301,6 +330,14 @@
             width: auto;
             padding: 8px 15px;
             font-size: 14px;
+        }
+
+        .friend-reject-btn {
+            background-color: var(--error-color);
+        }
+
+        .friend-reject-btn:hover {
+            background-color: #d32f2f;
         }
 
         .chat-container {
@@ -551,6 +588,65 @@
             color: var(--text-secondary);
         }
 
+        /* Уведомления */
+        .notifications-container {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            z-index: 1000;
+            max-width: 350px;
+        }
+        
+        .notification {
+            background-color: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--border-radius);
+            padding: 15px;
+            margin-bottom: 10px;
+            box-shadow: var(--shadow);
+            animation: slideIn 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        .notification-content {
+            flex: 1;
+        }
+        
+        .notification-actions {
+            display: flex;
+            gap: 5px;
+        }
+        
+        .notification-actions button {
+            padding: 5px 10px;
+            font-size: 12px;
+            width: auto;
+            margin: 0;
+        }
+        
+        .notification-success {
+            border-left: 4px solid var(--success-color);
+        }
+        
+        .notification-error {
+            border-left: 4px solid var(--error-color);
+        }
+        
+        .notification-warning {
+            border-left: 4px solid var(--warning-color);
+        }
+        
+        .notification-info {
+            border-left: 4px solid var(--primary-color);
+        }
+
         /* Scrollbar styling */
         ::-webkit-scrollbar {
             width: 8px;
@@ -606,14 +702,30 @@
                 justify-content: center;
                 margin-top: 10px;
             }
+            
+            .header-actions {
+                gap: 10px;
+            }
+            
+            .notification-icon {
+                font-size: 20px;
+            }
         }
     </style>
 </head>
 <body>
     <header>
         <div class="logo">Bindr</div>
-        <button class="theme-toggle" id="themeToggle">🌙</button>
+        <div class="header-actions">
+            <div class="notification-icon" id="notificationIcon">
+                🔔
+                <span class="badge" id="notificationBadge" style="display: none;">0</span>
+            </div>
+            <button class="theme-toggle" id="themeToggle">🌙</button>
+        </div>
     </header>
+
+    <div class="notifications-container" id="notificationsContainer" style="display: none;"></div>
 
     <div class="container">
         <!-- Страница входа -->
@@ -661,6 +773,11 @@
                 </div>
                 <button id="saveAvatarBtn">Сохранить аватар</button>
                 <button id="removeAvatarBtn">Удалить аватар</button>
+                
+                <div class="form-group">
+                    <h3>Запросы в друзья</h3>
+                    <div id="friendRequestsList"></div>
+                </div>
                 
                 <div class="form-group">
                     <h3>Поиск друзей</h3>
@@ -754,6 +871,7 @@
         const searchFriendBtn = document.getElementById('searchFriendBtn');
         const searchResults = document.getElementById('searchResults');
         const friendsList = document.getElementById('friendsList');
+        const friendRequestsList = document.getElementById('friendRequestsList');
         
         const deleteAccountBtn = document.getElementById('deleteAccountBtn');
         
@@ -765,6 +883,10 @@
         const currentChatWith = document.getElementById('currentChatWith');
         const chatHeaderAvatar = document.getElementById('chatHeaderAvatar');
         const chatStatus = document.getElementById('chatStatus');
+        
+        const notificationIcon = document.getElementById('notificationIcon');
+        const notificationBadge = document.getElementById('notificationBadge');
+        const notificationsContainer = document.getElementById('notificationsContainer');
         
         // Текущий пользователь и состояние приложения
         let currentUser = null;
@@ -800,18 +922,41 @@
             loginPage.classList.add('active');
         });
 
+        // Функция для показа уведомления
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `notification notification-${type}`;
+            notification.innerHTML = `
+                <div class="notification-content">${message}</div>
+                <button onclick="this.parentElement.remove()">✕</button>
+            `;
+            
+            notificationsContainer.appendChild(notification);
+            notificationsContainer.style.display = 'block';
+            
+            // Автоматическое скрытие через 5 секунд
+            setTimeout(() => {
+                if (notification.parentElement) {
+                    notification.remove();
+                    if (notificationsContainer.children.length === 0) {
+                        notificationsContainer.style.display = 'none';
+                    }
+                }
+            }, 5000);
+        }
+
         // Регистрация пользователя
         registerBtn.addEventListener('click', async () => {
             const username = registerUsername.value.trim();
             const password = registerPassword.value.trim();
             
             if (!username || !password) {
-                alert('Заполните все поля');
+                showNotification('Заполните все поля', 'warning');
                 return;
             }
             
             if (password.length < 6) {
-                alert('Пароль должен содержать не менее 6 символов');
+                showNotification('Пароль должен содержать не менее 6 символов', 'warning');
                 return;
             }
             
@@ -819,7 +964,7 @@
                 // Проверка существования пользователя
                 const userSnapshot = await db.ref('users').orderByChild('username').equalTo(username).once('value');
                 if (userSnapshot.exists()) {
-                    alert('Пользователь с таким именем уже существует');
+                    showNotification('Пользователь с таким именем уже существует', 'error');
                     return;
                 }
                 
@@ -835,7 +980,8 @@
                     username: username,
                     passwordHash: passwordHash,
                     createdAt: Date.now(),
-                    lastLogin: Date.now()
+                    lastLogin: Date.now(),
+                    lastActivity: Date.now()
                 });
                 
                 // Автоматический вход после регистрации
@@ -852,9 +998,11 @@
                 profilePage.classList.add('active');
                 loadUserData();
                 
+                showNotification(`Аккаунт создан! Добро пожаловать, ${username}!`, 'success');
+                
             } catch (error) {
                 console.error('Ошибка регистрации:', error);
-                alert('Ошибка регистрации: ' + error.message);
+                showNotification('Ошибка регистрации: ' + error.message, 'error');
             }
         });
 
@@ -864,7 +1012,7 @@
             const password = loginPassword.value.trim();
             
             if (!username || !password) {
-                alert('Заполните все поля');
+                showNotification('Заполните все поля', 'warning');
                 return;
             }
             
@@ -872,7 +1020,7 @@
                 // Поиск пользователя в базе данных
                 const userSnapshot = await db.ref('users').orderByChild('username').equalTo(username).once('value');
                 if (!userSnapshot.exists()) {
-                    alert('Пользователь с таким именем не найден');
+                    showNotification('Пользователь с таким именем не найден', 'error');
                     return;
                 }
                 
@@ -884,12 +1032,13 @@
                 // Проверка пароля (базовая, в реальном приложении используйте более безопасные методы)
                 const passwordHash = btoa(password); // Не безопасно! Только для демонстрации
                 if (userData.passwordHash !== passwordHash) {
-                    alert('Неверный пароль');
+                    showNotification('Неверный пароль', 'error');
                     return;
                 }
                 
                 // Обновление времени последнего входа
                 await db.ref(`users/${userData.uid}/lastLogin`).set(Date.now());
+                await db.ref(`users/${userData.uid}/lastActivity`).set(Date.now());
                 
                 // Установка текущего пользователя
                 currentUser = {
@@ -905,9 +1054,11 @@
                 profilePage.classList.add('active');
                 loadUserData();
                 
+                showNotification(`Добро пожаловать, ${username}!`, 'success');
+                
             } catch (error) {
                 console.error('Ошибка входа:', error);
-                alert('Ошибка входа: ' + error.message);
+                showNotification('Ошибка входа: ' + error.message, 'error');
             }
         });
 
@@ -927,25 +1078,135 @@
             // Загрузка списка друзей
             loadFriendsList();
             
+            // Прослушивание запросов в друзья
+            listenToFriendRequests();
+            
             // Проверка активности пользователя
             checkUserActivity();
         }
 
+        // Прослушивание запросов в друзья
+        function listenToFriendRequests() {
+            if (!currentUser) return;
+            
+            db.ref(`friendRequests/${currentUser.uid}`).on('value', async (snapshot) => {
+                let pendingCount = 0;
+                let requestsHTML = '';
+                
+                if (snapshot.exists()) {
+                    const requestsPromises = [];
+                    
+                    snapshot.forEach(childSnapshot => {
+                        const request = childSnapshot.val();
+                        if (request.status === 'pending') {
+                            pendingCount++;
+                            
+                            const promise = db.ref(`users/${request.from}`).once('value').then(userSnapshot => {
+                                if (userSnapshot.exists()) {
+                                    const user = userSnapshot.val();
+                                    let avatarUrl = '';
+                                    
+                                    return storage.ref(`avatars/${request.from}`).getDownloadURL().then(url => {
+                                        avatarUrl = url;
+                                    }).catch(error => {
+                                        // Аватар не найден, используем заглушку
+                                    }).then(() => {
+                                        return `
+                                            <div class="friend-card">
+                                                <img src="${avatarUrl || 'https://via.placeholder.com/60'}" alt="Аватар" class="friend-avatar">
+                                                <div class="friend-info">
+                                                    <h4>${user.username}</h4>
+                                                    <p>Хочет добавить вас в друзья</p>
+                                                </div>
+                                                <div class="friend-actions">
+                                                    <button onclick="acceptFriendRequest('${request.from}', '${childSnapshot.key}')">Принять</button>
+                                                    <button class="friend-reject-btn" onclick="rejectFriendRequest('${request.from}', '${childSnapshot.key}')">Отклонить</button>
+                                                </div>
+                                            </div>
+                                        `;
+                                    });
+                                }
+                                return '';
+                            });
+                            
+                            requestsPromises.push(promise);
+                        }
+                    });
+                    
+                    const requestsArray = await Promise.all(requestsPromises);
+                    requestsHTML = requestsArray.join('');
+                }
+                
+                // Обновление бейджа
+                if (pendingCount > 0) {
+                    notificationBadge.textContent = pendingCount;
+                    notificationBadge.style.display = 'flex';
+                    showNotification(`У вас ${pendingCount} новых запросов в друзья`, 'info');
+                } else {
+                    notificationBadge.style.display = 'none';
+                }
+                
+                friendRequestsList.innerHTML = requestsHTML || '<p>Запросов нет</p>';
+            });
+        }
+
+        // Принятие запроса в друзья
+        window.acceptFriendRequest = async function(fromUserId, requestId) {
+            try {
+                // Обновляем статус запроса
+                await db.ref(`friendRequests/${currentUser.uid}/${requestId}`).update({
+                    status: 'accepted',
+                    acceptedAt: Date.now()
+                });
+                
+                // Добавляем в друзья обоим пользователям
+                await db.ref(`friends/${currentUser.uid}/${fromUserId}`).set({
+                    since: Date.now()
+                });
+                
+                await db.ref(`friends/${fromUserId}/${currentUser.uid}`).set({
+                    since: Date.now()
+                });
+                
+                showNotification('Запрос в друзья принят!', 'success');
+                
+                // Перезагружаем список друзей
+                loadFriendsList();
+                
+            } catch (error) {
+                console.error('Ошибка принятия запроса:', error);
+                showNotification('Ошибка принятия запроса', 'error');
+            }
+        };
+
+        // Отклонение запроса в друзья
+        window.rejectFriendRequest = async function(fromUserId, requestId) {
+            try {
+                // Удаляем запрос
+                await db.ref(`friendRequests/${currentUser.uid}/${requestId}`).remove();
+                showNotification('Запрос в друзья отклонен', 'info');
+                
+            } catch (error) {
+                console.error('Ошибка отклонения запроса:', error);
+                showNotification('Ошибка отклонения запроса', 'error');
+            }
+        };
+
         // Сохранение аватара
         saveAvatarBtn.addEventListener('click', async () => {
             if (!currentUser) {
-                alert('Сначала войдите в систему');
+                showNotification('Сначала войдите в систему', 'error');
                 return;
             }
             
             if (!avatarUpload.files[0]) {
-                alert('Выберите файл');
+                showNotification('Выберите файл', 'warning');
                 return;
             }
             
             const file = avatarUpload.files[0];
             if (file.type !== 'image/jpeg') {
-                alert('Формат файла должен быть JPEG');
+                showNotification('Формат файла должен быть JPEG', 'warning');
                 return;
             }
             
@@ -953,7 +1214,7 @@
             const img = new Image();
             img.onload = async function() {
                 if (this.width !== 400 || this.height !== 400) {
-                    alert('Размер изображения должен быть 400×400 пикселей');
+                    showNotification('Размер изображения должен быть 400×400 пикселей', 'warning');
                     return;
                 }
                 
@@ -962,10 +1223,10 @@
                     await avatarRef.put(file);
                     const avatarUrl = await avatarRef.getDownloadURL();
                     avatarPreview.src = avatarUrl;
-                    alert('Аватар успешно сохранен');
+                    showNotification('Аватар успешно сохранен', 'success');
                 } catch (error) {
                     console.error('Ошибка загрузки аватара:', error);
-                    alert('Ошибка загрузки аватара: ' + error.message);
+                    showNotification('Ошибка загрузки аватара: ' + error.message, 'error');
                 }
             };
             img.src = URL.createObjectURL(file);
@@ -974,7 +1235,7 @@
         // Удаление аватара
         removeAvatarBtn.addEventListener('click', async () => {
             if (!currentUser) {
-                alert('Сначала войдите в систему');
+                showNotification('Сначала войдите в систему', 'error');
                 return;
             }
             
@@ -982,23 +1243,23 @@
                 const avatarRef = storage.ref(`avatars/${currentUser.uid}`);
                 await avatarRef.delete();
                 avatarPreview.src = '';
-                alert('Аватар удален');
+                showNotification('Аватар удален', 'success');
             } catch (error) {
                 console.error('Ошибка удаления аватара:', error);
-                alert('Ошибка удаления аватара: ' + error.message);
+                showNotification('Ошибка удаления аватара: ' + error.message, 'error');
             }
         });
 
         // Поиск друзей
         searchFriendBtn.addEventListener('click', async () => {
             if (!currentUser) {
-                alert('Сначала войдите в систему');
+                showNotification('Сначала войдите в систему', 'error');
                 return;
             }
             
             const searchUsername = searchFriend.value.trim();
             if (!searchUsername) {
-                alert('Введите имя пользователя');
+                showNotification('Введите имя пользователя', 'warning');
                 return;
             }
             
@@ -1030,14 +1291,28 @@
                 searchResults.innerHTML = resultsHTML || '<p>Пользователь не найден</p>';
             } catch (error) {
                 console.error('Ошибка поиска:', error);
-                alert('Ошибка поиска: ' + error.message);
+                showNotification('Ошибка поиска: ' + error.message, 'error');
             }
         });
 
         // Отправка запроса на дружбу
         window.sendFriendRequest = async function(friendId) {
             if (!currentUser) {
-                alert('Сначала войдите в систему');
+                showNotification('Сначала войдите в систему', 'error');
+                return;
+            }
+            
+            // Проверяем, не отправили ли уже запрос
+            const existingRequest = await db.ref(`friendRequests/${friendId}/${currentUser.uid}`).once('value');
+            if (existingRequest.exists()) {
+                showNotification('Вы уже отправили запрос этому пользователю', 'warning');
+                return;
+            }
+            
+            // Проверяем, не друзья ли уже
+            const isFriend = await db.ref(`friends/${currentUser.uid}/${friendId}`).once('value');
+            if (isFriend.exists()) {
+                showNotification('Этот пользователь уже у вас в друзьях', 'warning');
                 return;
             }
             
@@ -1047,10 +1322,10 @@
                     timestamp: Date.now(),
                     status: 'pending'
                 });
-                alert('Запрос на дружбу отправлен');
+                showNotification('Запрос на дружбу отправлен', 'success');
             } catch (error) {
                 console.error('Ошибка отправки запроса:', error);
-                alert('Ошибка отправки запроса: ' + error.message);
+                showNotification('Ошибка отправки запроса', 'error');
             }
         };
 
@@ -1087,11 +1362,11 @@
                                         <img src="${avatarUrl || 'https://via.placeholder.com/60'}" alt="Аватар" class="friend-avatar">
                                         <div class="friend-info">
                                             <h4>${user.username}</h4>
-                                            <p>В сети: ${new Date(user.lastLogin).toLocaleString()}</p>
+                                            <p>Друг с: ${new Date(friendData.since).toLocaleDateString()}</p>
                                         </div>
                                         <div class="friend-actions">
                                             <button onclick="startChat('${friendId}', '${user.username}')">Чат</button>
-                                            <button onclick="removeFriend('${friendId}')">Удалить</button>
+                                            <button class="friend-reject-btn" onclick="removeFriend('${friendId}')">Удалить</button>
                                         </div>
                                     </div>
                                 `;
@@ -1110,13 +1385,14 @@
                 friendsList.innerHTML = friendsHTML;
             } catch (error) {
                 console.error('Ошибка загрузки друзей:', error);
+                showNotification('Ошибка загрузки списка друзей', 'error');
             }
         }
 
         // Удаление друга
         window.removeFriend = async function(friendId) {
             if (!currentUser) {
-                alert('Сначала войдите в систему');
+                showNotification('Сначала войдите в систему', 'error');
                 return;
             }
             
@@ -1126,17 +1402,17 @@
                 await db.ref(`friends/${currentUser.uid}/${friendId}`).remove();
                 await db.ref(`friends/${friendId}/${currentUser.uid}`).remove();
                 loadFriendsList();
-                alert('Пользователь удален из друзей');
+                showNotification('Пользователь удален из друзей', 'success');
             } catch (error) {
                 console.error('Ошибка удаления друга:', error);
-                alert('Ошибка удаления друга: ' + error.message);
+                showNotification('Ошибка удаления друга: ' + error.message, 'error');
             }
         };
 
         // Начать чат с другом
         window.startChat = function(friendId, friendUsername) {
             if (!currentUser) {
-                alert('Сначала войдите в систему');
+                showNotification('Сначала войдите в систему', 'error');
                 return;
             }
             
@@ -1185,14 +1461,28 @@
                         const message = childSnapshot.val();
                         const messageClass = message.senderId === currentUser.uid ? 'message own' : 'message';
                         
-                        messagesHTML += `
-                            <div class="${messageClass}">
-                                <div class="message-content">
-                                    <p>${message.text}</p>
-                                    <div class="message-time">${new Date(message.timestamp).toLocaleTimeString()}</div>
+                        if (message.text) {
+                            messagesHTML += `
+                                <div class="${messageClass}">
+                                    <div class="message-content">
+                                        <p>${message.text}</p>
+                                        <div class="message-time">${new Date(message.timestamp).toLocaleTimeString()}</div>
+                                    </div>
                                 </div>
-                            </div>
-                        `;
+                            `;
+                        } else if (message.audioUrl) {
+                            messagesHTML += `
+                                <div class="${messageClass}">
+                                    <div class="message-content">
+                                        <audio controls>
+                                            <source src="${message.audioUrl}" type="audio/webm">
+                                            Ваш браузер не поддерживает аудио элементы.
+                                        </audio>
+                                        <div class="message-time">${new Date(message.timestamp).toLocaleTimeString()}</div>
+                                    </div>
+                                </div>
+                            `;
+                        }
                     });
                     
                     messagesContainer.innerHTML = messagesHTML;
@@ -1207,13 +1497,13 @@
         // Отправка сообщения
         sendMessageBtn.addEventListener('click', async () => {
             if (!currentUser || !currentChatUser) {
-                alert('Сначала выберите собеседника');
+                showNotification('Сначала выберите собеседника', 'warning');
                 return;
             }
             
             const messageText = messageInput.value.trim();
             if (!messageText) {
-                alert('Введите сообщение');
+                showNotification('Введите сообщение', 'warning');
                 return;
             }
             
@@ -1232,7 +1522,7 @@
                 messageInput.value = '';
             } catch (error) {
                 console.error('Ошибка отправки сообщения:', error);
-                alert('Ошибка отправки сообщения: ' + error.message);
+                showNotification('Ошибка отправки сообщения: ' + error.message, 'error');
             }
         });
 
@@ -1246,7 +1536,7 @@
         // Запись голосового сообщения
         recordVoiceBtn.addEventListener('click', async () => {
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                alert('Ваш браузер не поддерживает запись голоса');
+                showNotification('Ваш браузер не поддерживает запись голоса', 'error');
                 return;
             }
             
@@ -1289,8 +1579,11 @@
                                 audioUrl: audioUrl,
                                 timestamp: Date.now()
                             });
+                            
+                            showNotification('Голосовое сообщение отправлено', 'success');
                         } catch (error) {
                             console.error('Ошибка отправки голосового сообщения:', error);
+                            showNotification('Ошибка отправки голосового сообщения', 'error');
                         }
                     }
                     
@@ -1301,9 +1594,10 @@
                 mediaRecorder.start();
                 recordVoiceBtn.classList.add('recording');
                 isRecording = true;
+                showNotification('Запись голосового сообщения начата', 'info');
             } catch (error) {
                 console.error('Ошибка доступа к микрофону:', error);
-                alert('Не удалось получить доступ к микрофону');
+                showNotification('Не удалось получить доступ к микрофону', 'error');
             }
         });
 
@@ -1345,7 +1639,7 @@
         // Удаление аккаунта
         deleteAccountBtn.addEventListener('click', async () => {
             if (!currentUser) {
-                alert('Сначала войдите в систему');
+                showNotification('Сначала войдите в систему', 'error');
                 return;
             }
             
@@ -1371,6 +1665,21 @@
                     await db.ref(`friends/${currentUser.uid}`).remove();
                 }
                 
+                // Удаление запросов в друзья
+                await db.ref(`friendRequests/${currentUser.uid}`).remove();
+                
+                // Удаление исходящих запросов
+                const allRequestsSnapshot = await db.ref('friendRequests').once('value');
+                if (allRequestsSnapshot.exists()) {
+                    allRequestsSnapshot.forEach(userSnapshot => {
+                        userSnapshot.forEach(requestSnapshot => {
+                            if (requestSnapshot.val().from === currentUser.uid) {
+                                db.ref(`friendRequests/${userSnapshot.key}/${requestSnapshot.key}`).remove();
+                            }
+                        });
+                    });
+                }
+                
                 // Удаление сообщений
                 const messagesRef = db.ref('messages');
                 const messagesSnapshot = await messagesRef.once('value');
@@ -1390,10 +1699,21 @@
                 profilePage.classList.remove('active');
                 loginPage.classList.add('active');
                 
-                alert('Ваш аккаунт был удален');
+                showNotification('Ваш аккаунт был удален', 'success');
             } catch (error) {
                 console.error('Ошибка удаления аккаунта:', error);
-                alert('Ошибка удаления аккаунта: ' + error.message);
+                showNotification('Ошибка удаления аккаунта: ' + error.message, 'error');
+            }
+        });
+
+        // Обработчик клика по иконке уведомлений
+        notificationIcon.addEventListener('click', () => {
+            // Переходим на страницу профиля где отображаются запросы
+            if (!profilePage.classList.contains('active')) {
+                loginPage.classList.remove('active');
+                registerPage.classList.remove('active');
+                chatPage.classList.remove('active');
+                profilePage.classList.add('active');
             }
         });
 
@@ -1407,6 +1727,7 @@
                 loginPage.classList.remove('active');
                 profilePage.classList.add('active');
                 loadUserData();
+                showNotification(`С возвращением, ${currentUser.username}!`, 'success');
             }
         });
     </script>
