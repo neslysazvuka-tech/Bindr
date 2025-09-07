@@ -899,13 +899,13 @@
     </div>
 
     <script>
-        // Конфигурация Firebase - ОБНОВЛЕННАЯ
+        // Конфигурация Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyB2WvLmjgcv1YDwLRsVj6qAwbjMqG1hbKY",
             authDomain: "bindr-cac29.firebaseapp.com",
             databaseURL: "https://bindr-cac29-default-rtdb.firebaseio.com",
             projectId: "bindr-cac29",
-            storageBucket: "bindr-cac29.appspot.com", // Исправлено с firebasestorage.app на appspot.com
+            storageBucket: "bindr-cac29.firebasestorage.app",
             messagingSenderId: "888959223947",
             appId: "1:888959223947:web:c7e829c917354c9594ac8e"
         };
@@ -1027,7 +1027,7 @@
             notificationsPanel.classList.toggle('active');
         });
 
-        // Закрытие панель уведомлений при клике вне ее
+        // Закрытие панели уведомлений при клике вне ее
         document.addEventListener('click', (e) => {
             if (!notificationIcon.contains(e.target) && !notificationsPanel.contains(e.target)) {
                 notificationsPanel.classList.remove('active');
@@ -1143,7 +1143,7 @@
             }
         }
 
-        // Регистрация пользователя - ДОБАВЛЕНА ПРОВЕРКА НА УЖЕ СУЩЕСТВУЮЩЕГО ПОЛЬЗОВАТЕЛЯ
+        // Регистрация пользователя
         registerBtn.addEventListener('click', async () => {
             const username = registerUsername.value.trim();
             const password = registerPassword.value.trim();
@@ -1192,7 +1192,7 @@
             }
         });
 
-        // Вход пользователя - ДОБАВЛЕНА ПРОВЕРКА СУЩЕСТВОВАНИЯ ПОЛЬЗОВАТЕЛЯ
+        // Вход пользователя
         loginBtn.addEventListener('click', async () => {
             const username = loginUsername.value.trim();
             const password = loginPassword.value.trim();
@@ -1203,13 +1203,6 @@
             }
             
             try {
-                // Сначала проверяем существует ли пользователь в базе данных
-                const userSnapshot = await db.ref('users').orderByChild('username').equalTo(username).once('value');
-                if (!userSnapshot.exists()) {
-                    showNotification('Пользователь не найден', 'error');
-                    return;
-                }
-                
                 const userCredential = await auth.signInWithEmailAndPassword(`${username}@bindr.com`, password);
                 currentUser = userCredential.user;
                 
@@ -1226,15 +1219,7 @@
                 
             } catch (error) {
                 console.error('Ошибка входа:', error);
-                
-                // Более конкретные сообщения об ошибках
-                if (error.code === 'auth/user-not-found') {
-                    showNotification('Пользователь не найден', 'error');
-                } else if (error.code === 'auth/wrong-password') {
-                    showNotification('Неверный пароль', 'error');
-                } else {
-                    showNotification('Ошибка входа: ' + error.message, 'error');
-                }
+                showNotification('Ошибка входа: ' + error.message, 'error');
             }
         });
 
@@ -1593,7 +1578,7 @@
                 console.error('Ошибка удаления аватара:', error);
                 showNotification('Ошибка удаления аватара', 'error');
             }
-        };
+        });
 
         // Удаление аккаунта
         deleteAccountBtn.addEventListener('click', async () => {
